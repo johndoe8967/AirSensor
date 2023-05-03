@@ -1,0 +1,228 @@
+/*
+BME280 I2C
+This code shows how to record data from the BME280 environmental sensor
+using I2C interface. This file is an example file, part of the Arduino
+BME280 library.
+
+
+Connecting the BME280 Sensor:
+Sensor              ->  Board
+-----------------------------
+Vin (Voltage In)    ->  3.3V
+Gnd (Ground)        ->  Gnd
+SDA (Serial Data)   ->  A4 
+SCK (Serial Clock)  ->  A5 
+DHT anschluß
+1 Vcc 
+2 IO Pin
+3 NC
+4 GND
+10k zwischen 1 und 2
+
+ESP Anbindung
++5V
+GND
+Nano D2-> 1K -> ESP D7 ->2k ->GND (5->3,3V)
+ESP D8 -> Nano D3
+
+*/
+
+
+//#define debug
+#ifdef debug
+
+
+
+#define mySerial Serial
+#define DelayCount 50
+#else
+#include <SoftwareSerial.h>
+SoftwareSerial mySerial(3,2); //(D3=RX,D2=TX Nano) (D8=TX,D7=RX ESP)
+#define DelayCount 200
+#include <DHT.h>
+#include <Wire.h>
+#include <BME280I2C.h>
+#define DHTPIN 4     // what pin we're connected to
+#define DHTTYPE DHT22   // DHT22
+#define SERIAL_BAUD 115200
+
+BME280I2C bme;    // Default : forced mode, standby time = 1000 ms
+                  // Oversampling = pressure ×1, temperature ×1, humidity ×1, filter off,
+
+#endif
+
+const int analogInPin0 = A0;  // Analog input pin Spannung
+
+
+
+int sensorValue0 = 0;        // value read from the pot
+int sensorValue1 = 0;        // value read from the pot
+float sensorValue2 = 0;        // value read from the pot
+float sensorValue3 = 0;        // value read from the pot
+float sensorValue4 = 0;        // value read from the pot
+
+int outputValue = 0;        // value output to the PWM (analog out)
+float AbsenkTemp = 0.0;
+float Luftdruck = 0.0;
+float Aussentemp = 0.0;
+float Spannung = 0.0;
+DHT dht(DHTPIN, DHTTYPE); // Initialize DHT sensor for normal 16mhz Arduino
+float hum;  //Stores humidity value
+float temp; //Stores temperature value
+
+
+
+String inputString = "";          // a String to hold incoming data
+bool stringComplete = false;      // whether the string is complete
+
+
+void setup() {
+  // initialize serial communications at 9600 bps:
+  Serial.begin(SERIAL_BAUD);
+  mySerial.begin(9600);
+  analogReference(INTERNAL);  //1,1Volt Referenz
+  inputString.reserve(50);       // reserve 200 bytes for the inputString:  
+while(!Serial) {} // Wait
+
+  Wire.begin();
+  
+  while(!bme.begin())
+  {
+    Serial.println("Could not find BME280 sensor!");
+    delay(1000);
+  }
+   switch(bme.chipModel())
+  {
+     case BME280::ChipModel_BME280:
+       Serial.println("Found BME280 sensor! Success.");
+       break;
+     case BME280::ChipModel_BMP280:
+       //Serial.println("Found BMP280 sensor! No Humidity available.");
+       break;
+     default:
+       Serial.println("Found UNKNOWN sensor! Error!");
+  }
+  
+}
+
+void send2ESP8266() {
+  char outString[10];
+  // print the results to the ESP8266:
+  mySerial.print("RT_ist"); 
+  mySerial.print(sensorValue0);//rel.Feuchte
+  mySerial.print("\n\r");
+  
+  mySerial.print("AT"); 
+  mySerial.print(sensorValue1);//Innentemp
+  mySerial.print("\n\r");
+  
+  mySerial.print("RT_soll"); 
+  mySerial.print(sensorValue2);//Außentemp
+  mySerial.print("\n\r");
+
+  mySerial.print("KT_soll"); 
+  mySerial.print(sensorValue3);//Spannung
+  mySerial.print("\n\r");
+
+  mySerial.print("KT_ist"); 
+  mySerial.print(sensorValue4*18.75/1000); //Spannung
+  mySerial.print("\n\r");
+
+  mySerial.print("Brennerstd"); 
+  mySerial.print(0);
+  mySerial.print(".");
+  mySerial.print(0);
+  mySerial.print("\n\r");
+
+  mySerial.print("FuellStand"); 
+  mySerial.print(0);
+  mySerial.print("\n\r");
+}
+
+unsigned char counter=0;
+void loop() {
+  
+  printBME280Data(&Serial);    
+    //Read data and store it to variables hum and temp
+    float converted = 0.00;
+    hum = dht.readHumidity();
+    temp= dht.readTemperature()+1.0;
+  while (mySerial.available()) {
+    // get the new byte:
+    char inChar = (char)mySerial.read();
+    // add it to the inputString:
+    inputString += inChar;
+    // if the incoming character is a newline, set a flag so the main loop can
+    // do something about it:
+    if (inChar == '\r') {
+      stringComplete = true;
+    }
+  }
+
+  if (stringComplete) {
+    do {
+      if (inputString.startsWith("Absenk")) {
+        //AbsenkTemp = inputString.substring(6).toFloat(); 
+        AbsenkTemp = 0;
+        
+      }
+      
+      
+      inputString = inputString.substring(inputString.indexOf('\n'));
+    } while (inputString.indexOf('\n') > 0);
+    // clear the string:
+    inputString = "";
+    stringComplete = false;
+  }
+
+  // read the analog in value:
+  for (int zaehler=1; zaehler<20; zaehler = zaehler+1){
+  sensorValue0 = sensorValue0+hum;
+  sensorValue1 = sensorValue1+temp;
+  sensorValue2 = sensorValue2+Aussentemp;
+  sensorValue3 = sensorValue3+Luftdruck;
+  sensorValue4 = sensorValue4+analogRead(analogInPin0);
+  }
+  sensorValue0 = sensorValue0/20;
+  sensorValue1 = sensorValue1/20;
+  sensorValue2 = sensorValue2/20;
+  sensorValue3 = sensorValue3/20;
+  sensorValue4 = sensorValue4/20;
+  counter++;
+  if (counter == DelayCount) {
+    counter = 0;
+    send2ESP8266();
+  }
+  
+    
+    
+  
+    
+  
+  // wait 2 milliseconds before the next loop for the analog-to-digital
+  // converter to settle after the last reading:
+  delay(100);
+}
+
+void printBME280Data
+(
+   Stream* client
+)
+{
+   float temp(NAN), hum (NAN), pres(NAN);
+
+   BME280::TempUnit tempUnit(BME280::TempUnit_Celsius);
+   BME280::PresUnit presUnit(BME280::PresUnit_Pa);
+
+   bme.read(pres,temp, hum,  tempUnit, presUnit);
+
+  // client->print("Temp: ");
+   //client->print(temp);
+   Aussentemp=temp-1.4;
+  // client->print("°"+ String(tempUnit == BME280::TempUnit_Celsius ? 'C' :'F'));
+   //client->print("\t ");
+   //client->Luftdruck(pres/100+31.5);
+   Luftdruck=(pres/100+31.5);
+  // client->println("hPa");
+      delay(100);
+}

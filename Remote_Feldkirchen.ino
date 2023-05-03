@@ -14,6 +14,8 @@ DHT anschluß
 4 GND
 10k zwischen 1 und 2
 
+Spannungsmeesung A0
+
 ESP Anbindung
 +5V
 GND
@@ -27,18 +29,21 @@ ESP D8 -> Nano D3
 #include <BME280I2C.h>
   #define SERIAL_BAUD 115200
 
-#define debug
+//#define debug
 #ifdef debug
   #define mySerial Serial
-  #define DelayCount 5
+  #define DelayCount 200
 #else
   #include <SoftwareSerial.h>
   SoftwareSerial mySerial(3,2); //(D3=RX,D2=TX Nano) (D8=TX,D7=RX ESP)
-  #define DelayCount 200
+  #define DelayCount 140
 #endif
 
 const int analogInPin0 = A0;  // Analog input pin Spannung
+const int ledPin =  LED_BUILTIN;// the number of the LED pin
 float Spannung = 0.0;
+int ledState = LOW;             // ledState used to set the LED
+
 
 BME280I2C bme;    // Default : forced mode, standby time = 1000 ms
                   // Oversampling = pressure ×1, temperature ×1, humidity ×1, filter off,
@@ -48,8 +53,8 @@ float Aussentemp = 0.0;
 #define DHTPIN 4     // what pin we're connected to
 #define DHTTYPE DHT22   // DHT22
 DHT dht(DHTPIN, DHTTYPE); // Initialize DHT sensor for normal 16mhz Arduino
-float Feuchte;  //Stores humidity value
-float Innentemp; //Stores temperature value
+float Feuchte = 0.0;  //Stores humidity value
+float Innentemp = 0.0; //Stores temperature value
 
 String inputString = "";          // a String to hold incoming data
 bool stringComplete = false;      // whether the string is complete
@@ -61,6 +66,8 @@ void setup() {
   mySerial.begin(9600);
   analogReference(INTERNAL);  //1,1Volt Referenz
   inputString.reserve(50);       // reserve 200 bytes for the inputString:  
+  dht.begin();
+   pinMode(ledPin, OUTPUT);
 while(!Serial) {} // Wait
 
   Wire.begin();
@@ -106,13 +113,11 @@ void send2ESP8266() {
   mySerial.print(Spannung*18.75/1000); //Spannung
   mySerial.print("\n\r");
 
-/*  mySerial.print("Brennerstd"); 
-  mySerial.print(0);
-  mySerial.print(".");
-  mySerial.print(0);
+  mySerial.print("Brennerstd"); 
+  mySerial.print(Luftdruck*3600); //
   mySerial.print("\n\r");
 
-  mySerial.print("FuellStand"); 
+/*  mySerial.print("FuellStand"); 
   mySerial.print(0);
   mySerial.print("\n\r");*/
 }
@@ -123,14 +128,29 @@ void loop() {
   if (counter == DelayCount) {
     counter = 0;
     readAndCalcBME280Data();    
-  
     //Read data and store it to variables hum and temp
     Feuchte = dht.readHumidity();
     if (isnan(Feuchte)) Serial.println("Error reading Feuchte");
+    else {
+      Serial.print("Feuchte: ");
+      Serial.println(Feuchte);
+    }
     Innentemp= dht.readTemperature()+1.0;
     if (isnan(Innentemp)) Serial.println("Error reading Innentemp");
-
+    else {
+      Serial.print("Innentemp: ");
+      Serial.println(Innentemp);
+    }
     Spannung = analogRead(analogInPin0);
+    delay(1910);
+    if (ledState == LOW) {
+      ledState = HIGH;
+    } else {
+      ledState = LOW;
+    }
+
+    // set the LED with the ledState of the variable:
+    digitalWrite(ledPin, ledState);
     send2ESP8266();
   }
   
@@ -156,6 +176,7 @@ void loop() {
   // wait 200 milliseconds before the next loop for the analog-to-digital
   // converter to settle after the last reading:
   delay(200);
+   
 }
 
 void readAndCalcBME280Data()
