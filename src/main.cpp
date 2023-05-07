@@ -5,18 +5,22 @@
 #include <ArduinoJson.h>
 #include "Version.h"
 
+
 #define serialConsole
 Stream *console;
 
-#define debug 1
+#define debug false
+//#define _DEBUG_ 1
 
 
 unsigned long UpdateIntervall = 10000; // 10 seconds update intervall
 unsigned long nextUpdateTime = 0;     // absolut timestamp of next update
 unsigned long getNextUpdateTime() { return millis() + UpdateIntervall; };
 
+StaticJsonDocument<512> data;
 String inputString = "";          // a String to hold incoming data
 bool stringComplete = false;      // whether the string is complete
+bool valueAvailable = false;
 
 // -----------------------------------------------------------------
 // initialisations after each reconnect to WIFI
@@ -62,7 +66,14 @@ void sendNewData() {
   String message;                           // will contain the http message to send into cloud
   count++;
   // Publish a message to "mytopic/test"
-  message = "{\"name\":\"" DEVICENAME "\",\"field\":\"Air\",\"Value\":";
+  data["name"]=DEVICENAME;
+  data["field"]="Air";
+  data["Value"]=count;
+  data["time"]=getStringTimeWithMS();
+  serializeJson(data,message);
+  Serial.println(message);
+
+/*  message = "{\"name\":\"" DEVICENAME "\",\"field\":\"Air\",\"Value\":";
   message += count;
   if (true) {
     message += ",\"Temperature\":";
@@ -74,17 +85,11 @@ void sendNewData() {
     message += ",\"CO2\":";
     message += CO2;
   }
-  if (false) {
-    message += ",\"CO2\":";
-    message += 400.0;
-  }
   message += ",\"time\":";
   message += getStringTimeWithMS();
-  message += "}";
+  message += "}";*/
   MQTTClient.publish("sensors", message); // You can activate the retain flag by setting the third parameter to true
 }
-
-
 
 
 // -----------------------------------------------------------------
@@ -92,47 +97,58 @@ void sendNewData() {
 // -----------------------------------------------------------------
 void loop()
 {
-  String PVData;
-  while (Serial.available()) {
-    // get the new byte:
-    char inChar = (char)Serial.read();
-    // add it to the inputString:
-    inputString += inChar;
-    // if the incoming character is a newline, set a flag so the main loop can
-    // do something about it:
-    if (inChar == '\r') {
-      stringComplete = true;
+  // read all available character from the serial and add to inputString, a string is complete if a CR is receaved
+  #define MAX_MESSAGE_LENGTH 100
+  static char message[MAX_MESSAGE_LENGTH];
+
+  while (Serial.available() > 0)
+  {
+    //Create a place to hold the incoming message
+    static unsigned int message_pos = 0;
+
+    //Read the next available byte in the serial receive buffer
+    char inByte = Serial.read();
+
+    //Message coming in (check not terminating character) and guard for over message size
+    if ( inByte != '\n' && (message_pos < MAX_MESSAGE_LENGTH - 1) )
+     {
+      //Add the incoming byte to our message
+      message[message_pos] = inByte;
+      message_pos++;
     }
-  }
-  if (stringComplete) {
-    do {
-      Serial.println(inputString);
-      
-      if (inputString.startsWith("HUMI")) {
-        humidity = inputString.substring(4).toFloat(); 
+    //Full message received...
+    else
+   {
+      //Add null character to string
+      message[message_pos] = '\0';
+
+      //Print the message (or do other things)
+      DeserializationError err = deserializeJson(data, message);
+
+      if (err == DeserializationError::Ok) 
+      {
+        Serial.println("Got Values");
+        valueAvailable = true;
+      } 
+      else 
+      {
+        // Print error to the "debug" serial port
+        Serial.print("deserializeJson() returned ");
+        Serial.println(err.c_str());
       }
 
-      if (inputString.startsWith("TEMP")) {
-        temp = inputString.substring(4).toFloat(); 
-      }
-      if (inputString.startsWith("PRESS")) {
-        press = inputString.substring(5).toFloat(); 
-      }
-      if (inputString.startsWith("CO2")) {
-        CO2 = inputString.substring(3).toFloat(); 
-      }
-      inputString = inputString.substring(inputString.indexOf('\r'));
-    } while (inputString.indexOf('\r') > 0);
-    inputString="";
-    stringComplete=false;
-  }
+
+      //Reset for the next message
+      message_pos = 0;
+   }
+ }
 
   if (loopMQTT()) // process mqtt
   {
-    if (millis() > nextUpdateTime) // check if update timestamp reached
+    if (valueAvailable)
     {
-      nextUpdateTime += UpdateIntervall; // calculate next update timestamp
-      sendNewData();
+        sendNewData();
+        valueAvailable=false;
     }
   }
   delay(10);
