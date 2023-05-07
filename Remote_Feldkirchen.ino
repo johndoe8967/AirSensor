@@ -25,6 +25,7 @@ ESP D8 -> Nano D3
 #include <DHT.h>
 #include <Wire.h>
 #include <BME280I2C.h>
+#include <ArduinoJson.h>
 #define SERIAL_BAUD 115200
 
 //#define debug
@@ -49,19 +50,21 @@ float Luftdruck = 0.0;
 #define DHTTYPE DHT22      // DHT22
 DHT dht(DHTPIN, DHTTYPE);  // Initialize DHT sensor for normal 16mhz Arduino
 float Feuchte = 0.0;       //Stores humidity value
-float Innentemp = 0.0;     //Stores temperature value
+float dhtTemp = 0.0;     //Stores temperature value
+float bmeTemp = 0.0;
 
 float CO_2 = 0.0;  //Stores CO2 concentration
 
 String inputString = "";      // a String to hold incoming data
 bool stringComplete = false;  // whether the string is complete
+StaticJsonDocument<265> doc;
 
 
 void setup() {
   // initialize serial communications at 9600 bps:
   Serial.begin(SERIAL_BAUD);
   mySerial.begin(9600);
-  inputString.reserve(50);  // reserve 200 bytes for the inputString:
+  inputString.reserve(200);  // reserve 200 bytes for the inputString:
   dht.begin();
   pinMode(ledPin, OUTPUT);
   while (!Serial) {}  // Wait
@@ -84,24 +87,20 @@ void setup() {
   }
 }
 
+void buildJson() {
+  doc.clear();
+  doc["HUMI"]=Feuchte;
+  doc["Temp"]=dhtTemp;
+  doc["Temp1"]=bmeTemp;
+  doc["CO_2"]=CO_2;
+  doc["PRES"]=Luftdruck;
+}
 void send2ESP8266() {
   // print the results to the ESP8266:
-  mySerial.print("HUMI");
-  mySerial.print(Feuchte);  //rel.Feuchte
-  mySerial.print("\n\r");
-
-  mySerial.print("TEMP");
-  mySerial.print(Innentemp);  //Innentemp
-  mySerial.print("\n\r");
-
-  mySerial.print("PRESS");
-  mySerial.print(Luftdruck);  //Luftdruck
-  mySerial.print("\n\r");
-
-  mySerial.print("CO_2");
-  mySerial.print(CO_2);
-  mySerial.print("\n\r");
+  serializeJson(doc,mySerial);
+  mySerial.println();
 }
+
 
 unsigned char counter = 0;
 void loop() {
@@ -112,16 +111,8 @@ void loop() {
     //Read data and store it to variables hum and temp
     Feuchte = dht.readHumidity();
     if (isnan(Feuchte)) Serial.println("Error reading Feuchte");
-    else {
-      Serial.print("Feuchte: ");
-      Serial.println(Feuchte);
-    }
-    Innentemp = dht.readTemperature()+1.0;
-    if (isnan(Innentemp)) Serial.println("Error reading Innentemp");
-    else {
-      Serial.print("Innentemp: ");
-      Serial.println(Innentemp);
-    }
+    dhtTemp = dht.readTemperature();
+    if (isnan(dhtTemp)) Serial.println("Error reading dhtTemp");
     delay(1910);
     if (ledState == LOW) {
       ledState = HIGH;
@@ -131,6 +122,7 @@ void loop() {
 
     // set the LED with the ledState of the variable:
     digitalWrite(ledPin, ledState);
+    buildJson();
     send2ESP8266();
   }
 
@@ -141,13 +133,15 @@ void loop() {
     inputString += inChar;
     // if the incoming character is a newline, set a flag so the main loop can
     // do something about it:
-    if (inChar == '\r') {
+    if (inChar == '\n') {
       stringComplete = true;
     }
   }
 
   if (stringComplete) {
     // clear the string:
+    Serial.print("ESP: ");
+    Serial.println(inputString);
     inputString = "";
     stringComplete = false;
   }
@@ -164,11 +158,7 @@ void readAndCalcBME280Data() {
   BME280::TempUnit tempUnit(BME280::TempUnit_Celsius);
   BME280::PresUnit presUnit(BME280::PresUnit_Pa);
 
-  bme.read(pres, temp, hum, tempUnit, presUnit);
+  bme.read(pres, bmeTemp, hum, tempUnit, presUnit);
 
   Luftdruck = (pres / 100 + 31.5);
-  Serial.print("Druck: ");
-  Serial.println(Luftdruck);
-  Serial.print("Temp: ");
-  Serial.println(temp);
 }
