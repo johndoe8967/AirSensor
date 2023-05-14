@@ -51,7 +51,7 @@ float Luftdruck = 0.0;
 #define DHTTYPE DHT22      // DHT22
 DHT dht(DHTPIN, DHTTYPE);  // Initialize DHT sensor for normal 16mhz Arduino
 float Feuchte = 0.0;       //Stores humidity value
-float dhtTemp = 0.0;     //Stores temperature value
+float dhtTemp = 0.0;       //Stores temperature value
 float bmeTemp = 0.0;
 
 #define MH_Z19_RX A0  // A0
