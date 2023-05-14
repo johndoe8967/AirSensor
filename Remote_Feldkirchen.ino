@@ -31,7 +31,7 @@ ESP D8 -> Nano D3
 //#define debug
 #ifdef debug
 #define mySerial Serial
-#define DelayCount 200
+#define DelayCount 50
 #else
 #include <SoftwareSerial.h>
 SoftwareSerial mySerial(3, 2);  //(D3=RX,D2=TX Nano) (D8=TX,D7=RX ESP)
@@ -113,7 +113,6 @@ void loop() {
     if (isnan(Feuchte)) Serial.println("Error reading Feuchte");
     dhtTemp = dht.readTemperature();
     if (isnan(dhtTemp)) Serial.println("Error reading dhtTemp");
-    delay(1910);
     if (ledState == LOW) {
       ledState = HIGH;
     } else {
