@@ -25,6 +25,7 @@ ESP D8 -> Nano D3
 #include <DHT.h>
 #include <Wire.h>
 #include <BME280I2C.h>
+#include <MHZ.h>
 #include <ArduinoJson.h>
 #define SERIAL_BAUD 115200
 
@@ -53,7 +54,14 @@ float Feuchte = 0.0;       //Stores humidity value
 float dhtTemp = 0.0;     //Stores temperature value
 float bmeTemp = 0.0;
 
-float CO_2 = 0.0;  //Stores CO2 concentration
+#define MH_Z19_RX A0  // A0
+#define MH_Z19_TX A2  // A2
+#define CO2 1
+#ifdef CO2
+#define CO2_IN 10
+MHZ co2(MH_Z19_RX, MH_Z19_TX, MHZ19B);
+int CO_2 = STATUS_NOT_READY;  //Stores CO2 concentration
+#endif
 
 String inputString = "";      // a String to hold incoming data
 bool stringComplete = false;  // whether the string is complete
@@ -85,15 +93,27 @@ void setup() {
     default:
       Serial.println("Found UNKNOWN sensor! Error!");
   }
+#ifdef CO2
+  // enable debug to get addition information
+  #ifdef debug
+  co2.setDebug(true);
+  #endif
+#endif
 }
 
 void buildJson() {
   doc.clear();
-  doc["HUMI"]=Feuchte;
-  doc["Temp"]=dhtTemp;
-  doc["Temp1"]=bmeTemp;
-  doc["CO_2"]=CO_2;
-  doc["PRES"]=Luftdruck;
+  doc["HUMI"] = Feuchte;
+  doc["Temp"] = dhtTemp;
+  doc["Temp1"] = bmeTemp;
+#ifdef CO2
+  if (CO_2 != STATUS_NOT_READY) 
+  {
+    doc["CO_2"] = CO_2;
+  }
+
+#endif
+  doc["PRES"] = Luftdruck;
 }
 void send2ESP8266() {
   // print the results to the ESP8266:
@@ -113,6 +133,16 @@ void loop() {
     if (isnan(Feuchte)) Serial.println("Error reading Feuchte");
     dhtTemp = dht.readTemperature();
     if (isnan(dhtTemp)) Serial.println("Error reading dhtTemp");
+
+#ifdef CO2
+    if (co2.isPreHeating()) {
+      Serial.println("Preheating");
+    } else {
+      CO_2 = co2.readCO2UART();
+      Serial.print("PPMuart: ");
+      Serial.println(CO_2);
+    }
+#endif
     if (ledState == LOW) {
       ledState = HIGH;
     } else {
